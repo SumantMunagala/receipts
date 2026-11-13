@@ -1,0 +1,21 @@
+# Env files: only the examples are committed
+.env
+.env.*
+!.env.example
+
+# Go
+api/tmp/
+api/bin/
+*.exe
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# OS / editors
+.DS_Store
+Thumbs.db
