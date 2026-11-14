@@ -417,3 +417,6 @@ Bugs and how they were resolved -- what broke and how you fixed it is great inte
 
 | Issue | Root cause | Resolution |
 |-------|------------|------------|
+| Docker engine never came up (`dockerDesktopLinuxEngine` pipe missing) | Windows "Virtual Machine Platform" feature was off, so WSL2 couldn't run (BIOS virtualization was fine) | Admin `wsl.exe --install --no-distribution` + reboot |
+| `go test -race` failed to find a usable C compiler | Old 32-bit `C:\MinGW` gcc 6.3 is first on the system PATH | Installed WinLibs gcc and set `go env -w CC=` to it, leaving PATH alone |
+| air failed with "invalid escape sequence: \s" | Windows path in a TOML basic string (`"tmp\server.exe"`) | TOML literal string `'tmp\server.exe'` |
