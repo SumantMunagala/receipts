@@ -19,7 +19,8 @@ Update this section after every task: what exists, what changed from the plan, a
 - make (ezwinports) runs recipes under cmd.exe: keep recipes shell-neutral, no quotes in `echo`.
 - air can't send interrupts on Windows (uses TASKKILL), so graceful shutdown only shows on Ctrl+C in a console or on Linux.
 - pnpm 12 blocks dependency build scripts; allowed ones are listed under `allowBuilds` in `web/pnpm-workspace.yaml` (esbuild is allowed for tsx).
-- Not yet verified: `docker compose up` (Docker Desktop engine didn't start during Task 1) and SIGTERM shutdown on Linux. Check both at the start of Task 2.
+- Docker Desktop needs the Windows "Virtual Machine Platform" feature (WSL2). If the engine pipe is missing, run `wsl --status`; fix with admin `wsl.exe --install --no-distribution` + reboot. Docker Desktop doesn't auto-start, so launch it before `docker compose up`.
+- Verified: `docker compose up -d --wait` (Postgres 17.12 and Redis 7 healthy); SIGTERM in a `golang:1.27` container logs "shutting down" then "shutdown complete" and exits 0.
 
 **Product:** Receipts (repo and LangSmith project `receipts`). Tagline: "Check the hype before you buy." Before launch: confirm a domain, check no similar consumer app uses the name, search USPTO. Never use "TikTok" or "Tok" in the name.
 
