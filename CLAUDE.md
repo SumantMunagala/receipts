@@ -22,6 +22,16 @@ Update this section after every task: what exists, what changed from the plan, a
 - Docker Desktop needs the Windows "Virtual Machine Platform" feature (WSL2). If the engine pipe is missing, run `wsl --status`; fix with admin `wsl.exe --install --no-distribution` + reboot. Docker Desktop doesn't auto-start, so launch it before `docker compose up`.
 - Verified: `docker compose up -d --wait` (Postgres 17.12 and Redis 7 healthy); SIGTERM in a `golang:1.27` container logs "shutting down" then "shutdown complete" and exits 0.
 
+**LLM calls (Phase 1 Task 2):** nodes call only `structured(step, schema, input)` from `web/src/lib/llm.ts`.
+- `getModel(step)` resolves `MODEL_<STEP>` or the default model, plus a fallback that is never the same model.
+- Each attempt has a 20s timeout. A 429 is retried once on the same model after Gemini's `retryDelay` (capped at 5s); then `withFallbacks` moves to the fallback model. Non-429 errors and schema-invalid output go straight to the fallback.
+- Output is validated with Zod. If both models fail, it throws `LlmError`, which nodes turn into `unavailable`.
+- `onLlmCall(listener)` gets one record per call (step, model, fallbackUsed, attempts, rateLimitRetries, tokens, latency, ok, mock); a default listener logs `[llm] {json}` outside tests.
+- `maxRetries: 0` on `ChatGoogleGenerativeAI` is deliberate, because LangChain's default 6 retries would hide this policy.
+- **Schema conversion:** `@langchain/google-genai@2.3.4` sends schemas as Gemini's *legacy* `responseSchema`, which **ignores `oneOf`**: a probe returned `{"disclosure_result": ...}` for a discriminated union. So `toGeminiSchema()` converts Zod to JSON Schema with `oneOf` renamed to `anyOf`, and passes that to `withStructuredOutput(json, { method: "jsonSchema", includeRaw: true })`. 4/4 union probes were then valid, including a full Verdict.
+- The live/mock pattern is in `web/src/lib/externals/README.md`: `<name>.live.ts` + `<name>.mock.ts` + `fixtures/`; mocks inject 429s/failures via `configureMockLlm`. Live tests are `*.live.test.ts`, which skip without a key or outside `EXTERNALS_MODE=live`.
+- `env.llmModels()` resolves model names without an API key (mock mode/CI).
+
 **Schemas (Phase 1 Task 1):** `web/src/schemas/` holds one file per schema plus `common.ts` and an `index.ts` barrel; import from `@/schemas`. Each check section is a discriminated union on `status` with an `unavailable` variant (`{ status, reason }`), so a failed check still validates. Each `ok` variant is exported separately (e.g. `ReviewSummaryOkSchema`) so nodes can give the LLM only the ok shape and build `unavailable` in code. Product rules live in the schemas: TikTok-only URLs, evidence required for paid signals, sources required for a sentiment verdict, risk level matching the signal count, hype counts ≤ sample size, `bottomLine` ≤ 200 chars. **Use `tag("x")` (a one-value enum) for discriminators, never `z.literal`:** literals become JSON Schema `const`, which Gemini ignores (a live probe returned `status: "disclosed"`), while `enum` is enforced. Gemini also may not enforce `pattern`/length/refinements, so every LLM response must still go through `schema.safeParse`.
 
 **CI (Phase 0 Task 3):** `.github/workflows/ci.yml` runs on every push/PR with `EXTERNALS_MODE=mock`. Jobs: `changes` (dorny/paths-filter) → `go` (api/, Makefile, workflow), `web` (web/, workflow), and `contract` (always: Redocly lint + `make gen` with no diff). Path filtering uses job-level `if:`, because a skipped job counts as passing for required checks while workflow-level `paths:` would leave required checks pending. `main` is protected (requires `go`, `web`, `contract`, no bypass), so **all changes land through PRs**. The repo is public (`SumantMunagala/receipts`). Redocly is pinned to 2.72.1 in the workflow; config is in `redocly.yaml`, and accepted per-location exceptions are in `.redocly.lint-ignore.yaml`. `info-license` is off until a license is chosen.
@@ -283,6 +293,8 @@ LANGSMITH_PROJECT=receipts
 NEXT_PUBLIC_POSTHOG_KEY=
 NEXT_PUBLIC_POSTHOG_HOST=
 NEXT_PUBLIC_SENTRY_DSN=
+MOCK_LATENCY_MIN_MS=
+MOCK_LATENCY_MAX_MS=
 ```
 
 - Commit only `api/.env.example` and `web/.env.example`. CI secrets in GitHub Actions; production values in Render and Vercel.
@@ -290,7 +302,7 @@ NEXT_PUBLIC_SENTRY_DSN=
 - `DATABASE_URL` = Supabase session-mode pooler. `REDIS_URL` = Upstash `rediss://` URL.
 - `GEMINI_DEFAULT_MODEL` = a Flash-Lite model, `GEMINI_FALLBACK_MODEL` = a Flash model; `MODEL_<STEP>`, `YOUTUBE_API_KEY`, and `REDDIT_*` are optional.
 - Dev/CI and production use separate free-tier Google projects; no billing anywhere. `QUOTA_*` = production free-tier limits from Phase 0 (Go applies a 10% margin).
-- `EXTERNALS_MODE=mock` for CI, E2E, and load tests; evals always live.
+- `EXTERNALS_MODE=mock` for CI, E2E, and load tests; evals always live. `MOCK_LATENCY_MIN_MS`/`MOCK_LATENCY_MAX_MS` set the simulated latency (default 800/2500).
 - Go validates config at startup and exits on missing values; web uses per-feature Zod getters in `web/src/lib/env.ts`.
 
 ## Running locally
@@ -359,9 +371,9 @@ Update after every task and phase. This is the first thing a new session reads.
 
 ### Current status
 - **Current phase:** Phase 1 -- Agent pipeline in isolation (Phase 0 manual validation test still open)
-- **Current task:** Phase 1, Task 2 -- Model factory, fallback, and mock mode
-- **Last completed task:** Phase 1, Task 1 -- Zod schemas (2026-11-17)
-- **Next task:** Phase 1, Task 3 -- Input ingestion
+- **Current task:** Phase 1, Task 3 -- Input ingestion
+- **Last completed task:** Phase 1, Task 2 -- Model factory, fallback, and mock mode (2026-11-17)
+- **Next task:** Phase 1, Task 4 -- Product identification node
 - **Launch date:** not set (set at the start of Phase 4)
 
 ### Phase completion
@@ -382,7 +394,7 @@ Update after every task and phase. This is the first thing a new session reads.
 
 ### Phase 1 tasks
 - [x] Task 1 -- Zod schemas
-- [ ] Task 2 -- Model factory, fallback, and mock mode
+- [x] Task 2 -- Model factory, fallback, and mock mode
 - [ ] Task 3 -- Input ingestion
 - [ ] Task 4 -- Product identification node
 - [ ] Task 5 -- Disclosure check node
@@ -439,6 +451,8 @@ Architectural decisions made during the build that weren't in the original desig
 | Go module path `github.com/SumantMunagala/receipts/api` | Was `receipts/api` until the GitHub remote existed; renamed in Task 3 | None |
 | Public repo for branch protection | GitHub Free enforces branch protection only on public repos; public also means unlimited Actions minutes | Plans, CLAUDE.md, and test fixtures URLs are visible; never commit secrets (history checked clean at the switch) |
 | Tavily for all web lookups; no Gemini grounding (2026-11-17) | Phase 0: grounding is "Not available" on the Free tier (all grounded calls 429). Enabling billing makes every token in the project billable, so spend can't be held at $0, and the spend cap is experimental with ~10 min overage. Demo-scale use fits Tavily's 1,000 free credits/month | Capacity ~60-120 uncached checks/month; answer quality depends on Tavily results + Flash-Lite reading them. Upgrade path: grounding in a separate billed project behind `searchWeb()` |
+| LangChain packages pinned exactly (`@langchain/google-genai@2.3.4`, `@langchain/core@1.3.3`) | Structured-output schema handling changes between releases; a probe verified this exact pair | Upgrades are deliberate: re-run `pnpm --dir web test` with the live tests before bumping |
+| Retry/fallback policy owned by `llm.ts`, not LangChain | One 429 retry with Gemini's own delay, then a model with separate quota; LangChain's default backoff would hide 429s and burn quota | Custom code to maintain (covered by mock tests that inject 429s) |
 | Section schemas as discriminated unions on `status` | Makes "ok without data" and "unavailable with data" unrepresentable; each node's LLM gets only its ok variant | Consumers switch on `status` instead of reading optional fields |
 | `@google/genai` for raw Gemini calls in scripts | Official SDK; shows exactly what the provider returns (usage, errors) without the LangChain layer | Two Gemini client libraries once Phase 1 adds `@langchain/google-genai` |
 | Models: `gemini-3.5-flash-lite` default, `gemini-3.8-flash` fallback | Newest stable (non-preview) Lite and Flash available to the key; 2.5 models are closed to new users (404) | Free-tier Flash was overloaded (503) during Phase 0; revisit if that persists |
@@ -454,6 +468,7 @@ Bugs and how they were resolved -- what broke and how you fixed it is great inte
 | Every rdap.org lookup returned 403 | rdap.org's CDN blocks Node's default User-Agent | Send a descriptive `user-agent` header |
 | Every grounded Gemini call returned 429 "exceeded your current quota" with no quota details | Grounding is not offered on the Free tier at all; it isn't a rate limit | Confirmed on the pricing page; moved all lookups to Tavily |
 | CI `tsc --noEmit` failed: "Cannot find name 'LayoutProps'" (passed locally) | Next generates route type globals into `.next/types` via `next-env.d.ts`, both gitignored; local runs reused files from earlier `dev`/`build`, a clean CI checkout had none | `pnpm typecheck` = `next typegen && tsc --noEmit`, used locally and in CI; reproduced by deleting `.next`/`next-env.d.ts` first |
+| LangChain `withStructuredOutput` returned `parsed: null` for every discriminated-union schema while plain objects worked | `@langchain/google-genai` sends Gemini's legacy `responseSchema`, which ignores `oneOf`, so the output was unconstrained (`{"disclosure_result": ...}`) | `toGeminiSchema()` renames `oneOf` to `anyOf` and passes the JSON Schema with `method: "jsonSchema"`; Zod validates afterwards |
 | Gemini returned `status: "disclosed"` for a discriminated-union schema (accepted the schema, broke the contract) | `z.literal` exports as JSON Schema `const`, which Gemini's structured output doesn't enforce | `tag()` helper (one-value `z.enum`, exported as `enum`) for every discriminator; a test fails if any LLM-facing schema contains `const`; 3/3 live runs then valid |
 | Polling CI through the GitHub API stopped returning data | Unauthenticated API limit is 60 requests/hour; polling every 10s used it up | Check CI in the browser, or poll at long intervals with the full commit SHA |
 | Smoke report counted a skipped vision call as passed | Helper returned a boolean, so skip and pass collapsed together | Return `pass`/`fail`/`skip` and count each separately |
