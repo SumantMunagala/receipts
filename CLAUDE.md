@@ -22,18 +22,20 @@ Update this section after every task: what exists, what changed from the plan, a
 - Docker Desktop needs the Windows "Virtual Machine Platform" feature (WSL2). If the engine pipe is missing, run `wsl --status`; fix with admin `wsl.exe --install --no-distribution` + reboot. Docker Desktop doesn't auto-start, so launch it before `docker compose up`.
 - Verified: `docker compose up -d --wait` (Postgres 17.12 and Redis 7 healthy); SIGTERM in a `golang:1.27` container logs "shutting down" then "shutdown complete" and exits 0.
 
+**CI (Phase 0 Task 3):** `.github/workflows/ci.yml` runs on every push/PR with `EXTERNALS_MODE=mock`. Jobs: `changes` (dorny/paths-filter) → `go` (api/, Makefile, workflow), `web` (web/, workflow), and `contract` (always: Redocly lint + `make gen` with no diff). Path filtering uses job-level `if:`, because a skipped job counts as passing for required checks while workflow-level `paths:` would leave required checks pending. `main` is protected (requires `go`, `web`, `contract`, no bypass), so **all changes land through PRs**. The repo is public (`SumantMunagala/receipts`). Redocly is pinned to 2.72.1 in the workflow; config is in `redocly.yaml`, and accepted per-location exceptions are in `.redocly.lint-ignore.yaml`. `info-license` is off until a license is chosen.
+
 **Phase 0 Task 2 results (2026-11-17, `pnpm --dir web smoke`, `web/scripts/smoke-data-access.ts`):**
 - **TikTok oEmbed: no captions.** 3/3 real videos answered, but returned no `title` and no `author_name`, only `html` (a bare 332-char embed with no text), `embed_product_id`, and `embed_type`. A link alone gives the video ID; the handle comes from the URL path (`/@handle/video/<id>`). Caption and commission label need a screenshot, so for link input, ask for one.
-- **Tavily TikTok coverage: 11.6 videos/product on average** (run 2: 8-17 per product; run 1: 13.2) over 5 skincare products x 3 query variants (`include_domains: ["tiktok.com"]`, 20 results each). That's below the 20-post target, so the **YouTube supplement is needed**. About 50 of each product's results are non-video tiktok.com pages (discover/tag). About 50% of video snippets are caption-like (hashtags/@mentions, including disclosures such as `#GlowPartner`); the rest are TikTok's generated prose summaries, so the paid-signal classifier must not treat summary prose as the creator's caption. Cost: 15 credits per run.
+- **Tavily TikTok coverage: ~12 videos/product on average** (3 runs: 13.2, 11.6, 11.8; 8-17 per product) over 5 skincare products x 3 query variants (`include_domains: ["tiktok.com"]`, 20 results each). That's below the 20-post target, so the **YouTube supplement is needed**. About 50 of each product's results are non-video tiktok.com pages (discover/tag). About 50% of video snippets are caption-like (hashtags/@mentions, including disclosures such as `#GlowPartner`); the rest are TikTok's generated prose summaries, so the paid-signal classifier must not treat summary prose as the creator's caption. Cost: 15 credits per run.
 - **Gemini grounding: not available.** Every grounded call returns 429 on the Free tier; the pricing page lists grounding as "Not available" there. All lookups use Tavily instead (see Decisions log).
 - **Gemini 3.5 Flash-Lite (default): works.** Structured text took ~1.1s (88 tokens). Vision on a TikTok Shop listing took ~2.8s (1,215 tokens; the image is ~1.1k prompt tokens) and extracted every field correctly (brand, title, $25.00, "33 sold", no rating, no commission label) with zero thinking tokens. Schema-valid JSON every time via `responseJsonSchema` from `z.toJSONSchema()` (with `$schema` removed).
-- **Gemini 3.8 Flash (fallback): unusable on the free tier today.** It timed out at 15s or returned 503 "high demand" on every call; 3.5/3.6/3.7 Flash did the same. Its free RPD is only 20, so it can't be a real fallback: retry Flash-Lite first, and treat Flash as best-effort.
+- **Gemini 3.8 Flash (fallback): unusable on the free tier.** It timed out at 15s or returned 503 "high demand" on every call across 3 runs over ~1 hour; 3.5/3.6/3.7 Flash did the same. Its free RPD is only 20, so it can't be a real fallback: retry Flash-Lite first, and treat Flash as best-effort.
 - **Gemini models:** 2.5-series models are closed to new users (404). `thinkingLevel: "minimal"` isn't supported on 3.8 Flash (400).
 - **AI Studio free-tier limits (project `Receipts`, read 2026-11-17):** 3.5 Flash-Lite 15 RPM / 250K TPM / 500 RPD; 3.8 Flash 5 RPM / 250K TPM / 20 RPD.
 - **Other free allowances:** Tavily 1,000 credits/month (no card; basic search = 1 credit). YouTube Data API 10,000 units/day; `search.list` costs 1 unit but is capped at 100 calls/day, and `videos.list` costs 1 unit (Google's getting-started docs).
 - **RDAP:** works through `rdap.org` only with a descriptive User-Agent (403 otherwise), and redirects to the registry. cerave.com was registered 2004-11-18; dr-melaxin.com 2026-10-07 (41 days old). `.us` domains return 404 (not in the bootstrap).
 - **CPSC:** the API answers fast (JSON array). It covers consumer products, not cosmetics (FDA), and matches substrings ("facial" matched a VR headset face pad).
-- **YouTube:** not tested; no key yet. **Reddit:** skipped (not configured).
+- **YouTube Data API: works** (2026-11-17, key in the `Receipts` Google project, no billing). `search.list` (type=video, 10 results) for "Medicube Zero Pore Pads" returned 10 relevant review/how-to videos in ~0.6s; `videos.list` (part=snippet) returned all 10 snippets. Cost: 2 units per product (1 search + 1 details call), so the 100 searches/day cap binds long before the 10,000 units do. **Reddit:** skipped (not configured).
 - **Isolation verified:** with a bad Tavily key, only that section failed and the rest of the report ran.
 
 **Product:** Receipts (repo and LangSmith project `receipts`). Tagline: "Check the hype before you buy." Before launch: confirm a domain, check no similar consumer app uses the name, search USPTO. Never use "TikTok" or "Tok" in the name.
@@ -301,12 +303,15 @@ pnpm --dir web evals                       # full eval set (live)
 pnpm --dir web evals:gate                  # CI gate subset
 make test                                  # go test -race ./... + Vitest
 make lint                                  # golangci-lint + eslint (Next 16 has no `next lint`)
+pnpm --dir web typecheck                   # next typegen + tsc (plain tsc misses Next's generated route types)
+npx @redocly/cli@2.72.1 lint contracts/openapi.yaml  # contract lint (same as CI)
 pnpm e2e                                   # Playwright (mock mode)
 k6 run load-tests/check-burst.js           # load test (mock-mode deployment)
 ```
 
 ## Development guidelines
 - Explain reasoning before implementing; build the smallest working unit first; one task per session, committed before moving on
+- `main` is protected: work on a branch, push, and merge through a PR once `go`/`web`/`contract` pass
 - Never move forward until the current piece runs correctly
 - Every PR passes CI; never merge past a failing eval gate without a Decisions log entry
 - Change APIs in `contracts/openapi.yaml` first, then `make gen`; never hand-edit generated code
@@ -427,7 +432,8 @@ Architectural decisions made during the build that weren't in the original desig
 |----------|--------|----------|
 | godotenv loads `api/.env` in dev | `make dev-api` works the same in any shell (cmd, PowerShell, bash) | One extra dependency; a missing file is ignored, so production must set real env vars |
 | Go required env vars grow per phase | The server boots now; each key becomes required in the phase that first uses it | Config must be updated in every phase that adds a dependency |
-| Go module path `receipts/api` | No GitHub remote yet | Rename to `github.com/<owner>/receipts/api` when the remote exists (Task 3) |
+| Go module path `github.com/SumantMunagala/receipts/api` | Was `receipts/api` until the GitHub remote existed; renamed in Task 3 | None |
+| Public repo for branch protection | GitHub Free enforces branch protection only on public repos; public also means unlimited Actions minutes | Plans, CLAUDE.md, and test fixtures URLs are visible; never commit secrets (history checked clean at the switch) |
 | Tavily for all web lookups; no Gemini grounding (2026-11-17) | Phase 0: grounding is "Not available" on the Free tier (all grounded calls 429). Enabling billing makes every token in the project billable, so spend can't be held at $0, and the spend cap is experimental with ~10 min overage. Demo-scale use fits Tavily's 1,000 free credits/month | Capacity ~60-120 uncached checks/month; answer quality depends on Tavily results + Flash-Lite reading them. Upgrade path: grounding in a separate billed project behind `searchWeb()` |
 | `@google/genai` for raw Gemini calls in scripts | Official SDK; shows exactly what the provider returns (usage, errors) without the LangChain layer | Two Gemini client libraries once Phase 1 adds `@langchain/google-genai` |
 | Models: `gemini-3.5-flash-lite` default, `gemini-3.8-flash` fallback | Newest stable (non-preview) Lite and Flash available to the key; 2.5 models are closed to new users (404) | Free-tier Flash was overloaded (503) during Phase 0; revisit if that persists |
@@ -442,4 +448,5 @@ Bugs and how they were resolved -- what broke and how you fixed it is great inte
 | air failed with "invalid escape sequence: \s" | Windows path in a TOML basic string (`"tmp\server.exe"`) | TOML literal string `'tmp\server.exe'` |
 | Every rdap.org lookup returned 403 | rdap.org's CDN blocks Node's default User-Agent | Send a descriptive `user-agent` header |
 | Every grounded Gemini call returned 429 "exceeded your current quota" with no quota details | Grounding is not offered on the Free tier at all; it isn't a rate limit | Confirmed on the pricing page; moved all lookups to Tavily |
+| CI `tsc --noEmit` failed: "Cannot find name 'LayoutProps'" (passed locally) | Next generates route type globals into `.next/types` via `next-env.d.ts`, both gitignored; local runs reused files from earlier `dev`/`build`, a clean CI checkout had none | `pnpm typecheck` = `next typegen && tsc --noEmit`, used locally and in CI; reproduced by deleting `.next`/`next-env.d.ts` first |
 | Smoke report counted a skipped vision call as passed | Helper returned a boolean, so skip and pass collapsed together | Return `pass`/`fail`/`skip` and count each separately |

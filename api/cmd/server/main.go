@@ -14,8 +14,8 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"receipts/api/internal/config"
-	"receipts/api/internal/httpapi"
+	"github.com/SumantMunagala/receipts/api/internal/config"
+	"github.com/SumantMunagala/receipts/api/internal/httpapi"
 )
 
 func main() {

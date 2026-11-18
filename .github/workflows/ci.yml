@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # CI never calls live external APIs or needs their keys.
+  EXTERNALS_MODE: mock
+
+jobs:
+  # Path filtering happens with job-level `if:` instead of workflow-level
+  # `paths:`. A job skipped by `if:` reports "skipped", which satisfies a
+  # required status check; a check that never starts stays pending forever.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'api/**'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'web/**'
+              - '.github/workflows/ci.yml'
+
+  go:
+    name: go
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: go vet
+        run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15
+          working-directory: api
+      - name: go test
+        run: go test -race ./...
+      - name: go build
+        run: go build ./...
+
+  web:
+    name: web
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: lint
+        run: pnpm lint
+      - name: typecheck
+        run: pnpm typecheck
+      - name: test
+        run: pnpm test
+      - name: build
+        run: pnpm build
+
+  contract:
+    name: contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: lint OpenAPI
+        run: npx --yes @redocly/cli@2.72.1 lint contracts/openapi.yaml
+      - name: generated code is up to date
+        run: |
+          make gen
+          git diff --exit-code

@@ -5,11 +5,16 @@ info:
   description: >
     Public API and internal Go <-> agent API for Receipts.
     Only /healthz exists until Phase 4 Task 1.
+servers:
+  - url: http://localhost:8080
+    description: Local development (production URL added at deploy, Phase 5 Task 7)
 paths:
   /healthz:
     get:
       operationId: getHealth
       summary: Liveness check
+      # Public on purpose: uptime checks and keep-warm pings call it unauthenticated.
+      security: []
       responses:
         "200":
           description: Service is up
