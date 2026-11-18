@@ -1,0 +1,7 @@
+# Redocly CLI config for linting contracts/openapi.yaml (CI contract job).
+extends:
+  - recommended
+
+rules:
+  # No license chosen for the repo yet. Pick one, add info.license, and remove this.
+  info-license: off

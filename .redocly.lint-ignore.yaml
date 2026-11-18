@@ -1,0 +1,8 @@
+# Lint problems accepted on purpose; each entry is scoped to one location.
+contracts/openapi.yaml:
+  operation-4xx-response:
+    # A liveness check has no client-error case.
+    - '#/paths/~1healthz/get/responses'
+  no-server-example.com:
+    # Only the local server exists until the production deploy (Phase 5 Task 7).
+    - '#/servers/0/url'

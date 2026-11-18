@@ -22,6 +22,8 @@ Update this section after every task: what exists, what changed from the plan, a
 - Docker Desktop needs the Windows "Virtual Machine Platform" feature (WSL2). If the engine pipe is missing, run `wsl --status`; fix with admin `wsl.exe --install --no-distribution` + reboot. Docker Desktop doesn't auto-start, so launch it before `docker compose up`.
 - Verified: `docker compose up -d --wait` (Postgres 17.12 and Redis 7 healthy); SIGTERM in a `golang:1.27` container logs "shutting down" then "shutdown complete" and exits 0.
 
+**CI (Phase 0 Task 3):** `.github/workflows/ci.yml` runs on every push/PR with `EXTERNALS_MODE=mock`. Jobs: `changes` (dorny/paths-filter) → `go` (api/, Makefile, workflow), `web` (web/, workflow), and `contract` (always: Redocly lint + `make gen` with no diff). Path filtering uses job-level `if:`, because a skipped job counts as passing for required checks while workflow-level `paths:` would leave required checks pending. `main` is protected (requires `go`, `web`, `contract`, no bypass), so **all changes land through PRs**. The repo is public (`SumantMunagala/receipts`). Redocly is pinned to 2.72.1 in the workflow; config is in `redocly.yaml`, and accepted per-location exceptions are in `.redocly.lint-ignore.yaml`. `info-license` is off until a license is chosen.
+
 **Phase 0 Task 2 results (2026-11-17, `pnpm --dir web smoke`, `web/scripts/smoke-data-access.ts`):**
 - **TikTok oEmbed: no captions.** 3/3 real videos answered, but returned no `title` and no `author_name`, only `html` (a bare 332-char embed with no text), `embed_product_id`, and `embed_type`. A link alone gives the video ID; the handle comes from the URL path (`/@handle/video/<id>`). Caption and commission label need a screenshot, so for link input, ask for one.
 - **Tavily TikTok coverage: ~12 videos/product on average** (3 runs: 13.2, 11.6, 11.8; 8-17 per product) over 5 skincare products x 3 query variants (`include_domains: ["tiktok.com"]`, 20 results each). That's below the 20-post target, so the **YouTube supplement is needed**. About 50 of each product's results are non-video tiktok.com pages (discover/tag). About 50% of video snippets are caption-like (hashtags/@mentions, including disclosures such as `#GlowPartner`); the rest are TikTok's generated prose summaries, so the paid-signal classifier must not treat summary prose as the creator's caption. Cost: 15 credits per run.
@@ -301,12 +303,14 @@ pnpm --dir web evals                       # full eval set (live)
 pnpm --dir web evals:gate                  # CI gate subset
 make test                                  # go test -race ./... + Vitest
 make lint                                  # golangci-lint + eslint (Next 16 has no `next lint`)
+npx @redocly/cli@2.72.1 lint contracts/openapi.yaml  # contract lint (same as CI)
 pnpm e2e                                   # Playwright (mock mode)
 k6 run load-tests/check-burst.js           # load test (mock-mode deployment)
 ```
 
 ## Development guidelines
 - Explain reasoning before implementing; build the smallest working unit first; one task per session, committed before moving on
+- `main` is protected: work on a branch, push, and merge through a PR once `go`/`web`/`contract` pass
 - Never move forward until the current piece runs correctly
 - Every PR passes CI; never merge past a failing eval gate without a Decisions log entry
 - Change APIs in `contracts/openapi.yaml` first, then `make gen`; never hand-edit generated code
@@ -427,7 +431,8 @@ Architectural decisions made during the build that weren't in the original desig
 |----------|--------|----------|
 | godotenv loads `api/.env` in dev | `make dev-api` works the same in any shell (cmd, PowerShell, bash) | One extra dependency; a missing file is ignored, so production must set real env vars |
 | Go required env vars grow per phase | The server boots now; each key becomes required in the phase that first uses it | Config must be updated in every phase that adds a dependency |
-| Go module path `receipts/api` | No GitHub remote yet | Rename to `github.com/<owner>/receipts/api` when the remote exists (Task 3) |
+| Go module path `github.com/SumantMunagala/receipts/api` | Was `receipts/api` until the GitHub remote existed; renamed in Task 3 | None |
+| Public repo for branch protection | GitHub Free enforces branch protection only on public repos; public also means unlimited Actions minutes | Plans, CLAUDE.md, and test fixtures URLs are visible; never commit secrets (history checked clean at the switch) |
 | Tavily for all web lookups; no Gemini grounding (2026-11-17) | Phase 0: grounding is "Not available" on the Free tier (all grounded calls 429). Enabling billing makes every token in the project billable, so spend can't be held at $0, and the spend cap is experimental with ~10 min overage. Demo-scale use fits Tavily's 1,000 free credits/month | Capacity ~60-120 uncached checks/month; answer quality depends on Tavily results + Flash-Lite reading them. Upgrade path: grounding in a separate billed project behind `searchWeb()` |
 | `@google/genai` for raw Gemini calls in scripts | Official SDK; shows exactly what the provider returns (usage, errors) without the LangChain layer | Two Gemini client libraries once Phase 1 adds `@langchain/google-genai` |
 | Models: `gemini-3.5-flash-lite` default, `gemini-3.8-flash` fallback | Newest stable (non-preview) Lite and Flash available to the key; 2.5 models are closed to new users (404) | Free-tier Flash was overloaded (503) during Phase 0; revisit if that persists |

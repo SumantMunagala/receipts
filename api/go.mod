@@ -1,4 +1,4 @@
-module receipts/api
+module github.com/SumantMunagala/receipts/api
 
 go 1.27.4
 
