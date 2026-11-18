@@ -81,6 +81,51 @@ export const env = {
       },
     ),
 
+  // Model names only, no API key: mock mode and CI resolve models without one.
+  llmModels: () =>
+    parse(
+      "llm models",
+      z.object({
+        GEMINI_DEFAULT_MODEL: required,
+        GEMINI_FALLBACK_MODEL: required,
+        MODEL_INGEST: optional,
+        MODEL_IDENTIFY: optional,
+        MODEL_DISCLOSURE: optional,
+        MODEL_REVIEWS: optional,
+        MODEL_HYPE: optional,
+        MODEL_RISK: optional,
+        MODEL_DEAL: optional,
+        MODEL_SYNTHESIZE: optional,
+        MODEL_JUDGE: optional,
+      }),
+      {
+        GEMINI_DEFAULT_MODEL: process.env.GEMINI_DEFAULT_MODEL,
+        GEMINI_FALLBACK_MODEL: process.env.GEMINI_FALLBACK_MODEL,
+        MODEL_INGEST: process.env.MODEL_INGEST,
+        MODEL_IDENTIFY: process.env.MODEL_IDENTIFY,
+        MODEL_DISCLOSURE: process.env.MODEL_DISCLOSURE,
+        MODEL_REVIEWS: process.env.MODEL_REVIEWS,
+        MODEL_HYPE: process.env.MODEL_HYPE,
+        MODEL_RISK: process.env.MODEL_RISK,
+        MODEL_DEAL: process.env.MODEL_DEAL,
+        MODEL_SYNTHESIZE: process.env.MODEL_SYNTHESIZE,
+        MODEL_JUDGE: process.env.MODEL_JUDGE,
+      },
+    ),
+
+  mockLatency: () =>
+    parse(
+      "mock latency",
+      z.object({
+        MOCK_LATENCY_MIN_MS: z.coerce.number().int().nonnegative().default(800),
+        MOCK_LATENCY_MAX_MS: z.coerce.number().int().nonnegative().default(2500),
+      }),
+      {
+        MOCK_LATENCY_MIN_MS: process.env.MOCK_LATENCY_MIN_MS,
+        MOCK_LATENCY_MAX_MS: process.env.MOCK_LATENCY_MAX_MS,
+      },
+    ),
+
   search: () =>
     parse(
       "search",
