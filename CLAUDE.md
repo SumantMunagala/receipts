@@ -50,7 +50,7 @@ The headline is a **hype x quality quadrant** (see Pipeline details), shown on a
 - **Contract:** `contracts/openapi.yaml` for the public API and the internal Go <-> agent API; Go types, TS types, and Zod schemas are generated from it
 - **Data/infra:** Supabase (Postgres, Auth, Storage, Realtime), Upstash Redis, Inngest
 - **Models:** Gemini only. Flash-Lite by default for every step; Flash as fallback and per-step upgrade path
-- **External data:** Gemini Google Search grounding (reviews, prices, brand/retailer/complaint lookups); Tavily via `searchWeb()` only where exact text matters (hype captions, dropship listings); TikTok oEmbed; YouTube Data API (optional hype supplement); RDAP; CPSC recalls API; Reddit API only if approved
+- **External data:** Tavily via `searchWeb()` for every web lookup (reviews, prices, brand/retailer/complaint lookups, hype captions, dropship listings), with Flash-Lite reading the results; TikTok oEmbed; YouTube Data API (optional hype supplement); RDAP; CPSC recalls API; Reddit API only if approved
 - **Security:** Supabase Auth (JWTs verified in Go), RLS as defense in depth, Redis rate limiting, HMAC-signed internal calls, Turnstile (launch week)
 - **Quality/ops:** LangSmith, Sentry (errors + distributed tracing), GitHub Actions (CI, eval gate, contract drift), Go testing, Vitest, Playwright, k6, PostHog, pnpm
 
@@ -73,7 +73,7 @@ Inngest -> Go "run-check" (concurrency-limited, retried, durable)
     -> agent  POST /internal/agent/run  {source, product, sectionsToRun, providedResults, sheddingLevel}
          LangGraph.js (skips provided sections):
              START -+- disclosure  (commission label, #ad, affiliate links; n/a for listings)
-                    |- reviews     (grounded search)
+                    |- reviews     (web search + LLM read)
                     |- hype        (~40 public creator posts -> paid vs organic)
                     |- risk        (brand, retailers, dropship, complaints, recalls)
                     `- deal        (TikTok price vs outside and generic)
@@ -103,10 +103,10 @@ Browser: live progress -> verdict -> shareable /v/[id] + OG image
 | **Mixed** | Mixed signals | Mixed signals | Mixed signals |
 | **Not enough data** | Not enough evidence | Not enough evidence | Not enough evidence |
 
-- **Risk:** one grounded call covers brand site, retailer presence, and complaints; RDAP for domain age; raw search for AliExpress/Temu matches; CPSC for recalls. Output a level (`no_signals_found` / `some_signals` / `multiple_signals`), signals with evidence and sources, and which checks ran.
-- **Deal:** TikTok price from the screenshot (or typed by the viewer); outside prices from one grounded call, each with a source (approximate). The synthesizer attaches the risk check's generic match as a cheaper equivalent.
+- **Risk:** one search + LLM read covers brand site, retailer presence, and complaints; RDAP for domain age (send a User-Agent; some ccTLDs such as `.us` have no RDAP, which is reported as "not checked," never as a signal); search for AliExpress/Temu matches; CPSC for recalls (covers devices only, since cosmetics are FDA-regulated; substring matching, so filter results for relevance). Output a level (`no_signals_found` / `some_signals` / `multiple_signals`), signals with evidence and sources, and which checks ran.
+- **Deal:** TikTok price from the screenshot (or typed by the viewer); outside prices from one search + LLM read, each with a source URL (approximate). The synthesizer attaches the risk check's generic match as a cheaper equivalent.
 - **Ratings gap:** flag when the TikTok Shop rating and outside sentiment disagree (e.g. 4.8 stars, negative reviews).
-- **Quota budget:** all free tiers, no billing anywhere. Go keeps Redis counters per budget (Gemini requests per model/day, grounded requests/day, Tavily credits/month, YouTube units/day). The agent reserves before every external call. Shedding order as budgets drop: YouTube supplement off -> hype sample 20 -> dropship off -> no new uncached checks. Uncached checks are refused up front if they can't finish. At capacity, cached verdicts and trending still load.
+- **Quota budget:** all free tiers, no billing anywhere. Go keeps Redis counters per budget (Gemini requests per model/day, Tavily credits/month, YouTube units/day and search calls/day). Tavily is the binding budget (1,000 credits/month); dev runs share it, so use `EXTERNALS_MODE=mock` unless testing live data. The agent reserves before every external call. Shedding order as budgets drop: YouTube supplement off -> hype sample 20 -> dropship off -> no new uncached checks. Uncached checks are refused up front if they can't finish. At capacity, cached verdicts and trending still load.
 - **No scraping TikTok:** TikTok data comes only from user screenshots, the official oEmbed endpoint, and search results. No caption from oEmbed -> ask for a screenshot.
 
 ## Project structure (planned)
@@ -124,7 +124,7 @@ receipts/
 |   |-- src/app/              # page.tsx, v/[id], history, how-it-works, privacy, admin,
 |   |                         # api/agent/{identify,run} (HMAC-verified)
 |   |-- src/agent/            # state.ts, graph.ts, quadrant.ts, nodes/, prompts/
-|   |-- src/lib/              # env, llm, grounded, search, ingest, externals/ (live + mock),
+|   |-- src/lib/              # env, llm, search, ingest, externals/ (live + mock),
 |   |                         # paid-signals, urls, product-key, quota-client, api/, realtime, flags
 |   |-- src/schemas/          # generated Zod + agent-internal schemas
 |   |-- evals/                # dataset/, gate.json, run-evals.ts
@@ -155,7 +155,7 @@ receipts/
 - **Gemini only, Flash-Lite default** -- best free-tier usage; Groq ruled out (daily token cap = ~10 checks).
 - **Per-step models** -- `MODEL_<STEP>` overrides one step, only when evals justify it; Flash is fallback after one retry.
 - **Merged screenshot read + identify** -- saves a call per check.
-- **Grounded search for most lookups** -- far larger free allowance than Tavily; sources come only from grounding metadata.
+- **Tavily for all lookups, not Gemini grounding** -- grounding is "Not available" on the Gemini Free tier (Phase 0); Tavily's 1,000 free credits/month suit demo-scale use at $0. Lookups sit behind `searchWeb()`, so moving to grounding with billing later is a provider swap. Sources are the result URLs.
 - **Eval gate in CI** -- agent PRs run a fixed subset against `web/evals/gate.json` thresholds.
 
 **Input and data**
@@ -192,7 +192,9 @@ receipts/
 - **Free-tier limits** change and Gemini's aren't published -- record real limits from AI Studio in Phase 0.
 - **Free-tier data use** -- disclosed; screenshots deleted after 30 days.
 - **Capacity ceilings** -- dozens of new products/day; cache and coalescing make repeats free.
-- **Grounding sources** -- claims without a grounding-metadata source are dropped.
+- **Unsourced claims** -- claims the LLM can't tie to a search-result URL are dropped.
+- **Tavily capacity** -- ~60-120 uncached checks/month (estimate; measure in Phase 5). At capacity, cached verdicts still load. Real traffic means a paid plan or grounding with billing.
+- **Free-tier Flash availability** -- every Gemini Flash model returned 503 "high demand" or timed out during Phase 0 while Flash-Lite answered in ~1s; the fallback must tolerate the fallback being down too.
 - **Render cold starts** -- keep-warm cron and Inngest retries; measured in Phase 5.
 - **Cross-service complexity** -- contract drift check, distributed tracing, E2E on every preview.
 - **Supabase from Render** -- use the session-mode pooler (IPv4), not the direct connection.
@@ -222,9 +224,9 @@ IP_HASH_SALT=
 DAILY_CHECK_CAP=
 QUOTA_GEMINI_DEFAULT_RPD=
 QUOTA_GEMINI_FALLBACK_RPD=
-QUOTA_GROUNDED_RPD=
 QUOTA_TAVILY_MONTHLY=
 QUOTA_YOUTUBE_DAILY_UNITS=
+QUOTA_YOUTUBE_SEARCH_DAILY=
 ADMIN_EMAILS=
 WEB_ORIGIN=
 ```
@@ -360,7 +362,7 @@ Update after every task and phase. This is the first thing a new session reads.
 - [ ] Task 3 -- Input ingestion
 - [ ] Task 4 -- Product identification node
 - [ ] Task 5 -- Disclosure check node
-- [ ] Task 6 -- Grounded search, raw search, and review research node
+- [ ] Task 6 -- Web search (`searchWeb()`) and review research node
 - [ ] Task 7 -- Hype meter node
 - [ ] Task 8 -- Risk check node
 - [ ] Task 9 -- Deal comparison node
@@ -411,6 +413,9 @@ Architectural decisions made during the build that weren't in the original desig
 | godotenv loads `api/.env` in dev | `make dev-api` works the same in any shell (cmd, PowerShell, bash) | One extra dependency; a missing file is ignored, so production must set real env vars |
 | Go required env vars grow per phase | The server boots now; each key becomes required in the phase that first uses it | Config must be updated in every phase that adds a dependency |
 | Go module path `receipts/api` | No GitHub remote yet | Rename to `github.com/<owner>/receipts/api` when the remote exists (Task 3) |
+| Tavily for all web lookups; no Gemini grounding (2026-11-17) | Phase 0: grounding is "Not available" on the Free tier (all grounded calls 429). Enabling billing makes every token in the project billable, so spend can't be held at $0, and the spend cap is experimental with ~10 min overage. Demo-scale use fits Tavily's 1,000 free credits/month | Capacity ~60-120 uncached checks/month; answer quality depends on Tavily results + Flash-Lite reading them. Upgrade path: grounding in a separate billed project behind `searchWeb()` |
+| `@google/genai` for raw Gemini calls in scripts | Official SDK; shows exactly what the provider returns (usage, errors) without the LangChain layer | Two Gemini client libraries once Phase 1 adds `@langchain/google-genai` |
+| Models: `gemini-3.5-flash-lite` default, `gemini-3.8-flash` fallback | Newest stable (non-preview) Lite and Flash available to the key; 2.5 models are closed to new users (404) | Free-tier Flash was overloaded (503) during Phase 0; revisit if that persists |
 
 ### Issues log
 Bugs and how they were resolved -- what broke and how you fixed it is great interview material.

@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "check": "tsx scripts/check-cli.ts"
+    "check": "tsx scripts/check-cli.ts",
+    "smoke": "tsx scripts/smoke-data-access.ts"
   },
   "dependencies": {
+    "@google/genai": "^3.4.0",
     "next": "16.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0",
