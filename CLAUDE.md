@@ -23,6 +23,8 @@ Update this section after every task: what exists, what changed from the plan, a
 - Verified: `docker compose up -d --wait` (Postgres 17.12 and Redis 7 healthy); SIGTERM in a `golang:1.27` container logs "shutting down" then "shutdown complete" and exits 0.
 
 **CI (Phase 0 Task 3):** `.github/workflows/ci.yml` runs on every push/PR with `EXTERNALS_MODE=mock`. Jobs: `changes` (dorny/paths-filter) → `go` (api/, Makefile, workflow), `web` (web/, workflow), and `contract` (always: Redocly lint + `make gen` with no diff). Path filtering uses job-level `if:`, because a skipped job counts as passing for required checks while workflow-level `paths:` would leave required checks pending. `main` is protected (requires `go`, `web`, `contract`, no bypass), so **all changes land through PRs**. The repo is public (`SumantMunagala/receipts`). Redocly is pinned to 2.72.1 in the workflow; config is in `redocly.yaml`, and accepted per-location exceptions are in `.redocly.lint-ignore.yaml`. `info-license` is off until a license is chosen.
+- **Verified 2026-11-17 (PR #2, closed unmerged):** a Go type error failed `go` (at `go vet`) with `web` skipped by the path filter; an added TS error failed `web` (at `typecheck`); merging was blocked for everyone, including admin; reverting both turned the checks green.
+- **CI quirks:** on a PR the path filter compares the PR's *net* diff with `main`, so a PR whose changes cancel out shows `go`/`web` as skipped (the push run still runs them against the previous commit). Jobs can sit queued for minutes on free runners; that's normal. Unauthenticated GitHub API calls are limited to 60/hour, so check CI in the browser or poll sparingly.
 
 **Phase 0 Task 2 results (2026-11-17, `pnpm --dir web smoke`, `web/scripts/smoke-data-access.ts`):**
 - **TikTok oEmbed: no captions.** 3/3 real videos answered, but returned no `title` and no `author_name`, only `html` (a bare 332-char embed with no text), `embed_product_id`, and `embed_type`. A link alone gives the video ID; the handle comes from the URL path (`/@handle/video/<id>`). Caption and commission label need a screenshot, so for link input, ask for one.
@@ -355,9 +357,9 @@ Update after every task and phase. This is the first thing a new session reads.
 
 ### Current status
 - **Current phase:** Phase 0 -- Validation and setup
-- **Current task:** Phase 0, Task 3 -- CI baseline
-- **Last completed task:** Phase 0, Task 2 -- Data-access smoke test (2026-11-17)
-- **Next task:** Phase 0 manual validation test, then Phase 1, Task 1 -- Zod schemas
+- **Current task:** Phase 0 -- Manual validation test (non-coding)
+- **Last completed task:** Phase 0, Task 3 -- CI baseline (2026-11-17)
+- **Next task:** Phase 1, Task 1 -- Zod schemas
 - **Launch date:** not set (set at the start of Phase 4)
 
 ### Phase completion
@@ -374,7 +376,7 @@ Update after every task and phase. This is the first thing a new session reads.
 - [ ] Manual validation test (non-coding)
 - [x] Task 1 -- Scaffold the monorepo
 - [x] Task 2 -- Data-access smoke test
-- [ ] Task 3 -- CI baseline
+- [x] Task 3 -- CI baseline
 
 ### Phase 1 tasks
 - [ ] Task 1 -- Zod schemas
@@ -449,4 +451,5 @@ Bugs and how they were resolved -- what broke and how you fixed it is great inte
 | Every rdap.org lookup returned 403 | rdap.org's CDN blocks Node's default User-Agent | Send a descriptive `user-agent` header |
 | Every grounded Gemini call returned 429 "exceeded your current quota" with no quota details | Grounding is not offered on the Free tier at all; it isn't a rate limit | Confirmed on the pricing page; moved all lookups to Tavily |
 | CI `tsc --noEmit` failed: "Cannot find name 'LayoutProps'" (passed locally) | Next generates route type globals into `.next/types` via `next-env.d.ts`, both gitignored; local runs reused files from earlier `dev`/`build`, a clean CI checkout had none | `pnpm typecheck` = `next typegen && tsc --noEmit`, used locally and in CI; reproduced by deleting `.next`/`next-env.d.ts` first |
+| Polling CI through the GitHub API stopped returning data | Unauthenticated API limit is 60 requests/hour; polling every 10s used it up | Check CI in the browser, or poll at long intervals with the full commit SHA |
 | Smoke report counted a skipped vision call as passed | Helper returned a boolean, so skip and pass collapsed together | Return `pass`/`fail`/`skip` and count each separately |
