@@ -43,3 +43,6 @@ func Load(getenv func(string) string) (Config, error) {
 
 	return cfg, nil
 }
+
+// CI test: deliberate type error. Must never be merged.
+var _ int = "x"
