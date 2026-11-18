@@ -303,6 +303,7 @@ pnpm --dir web evals                       # full eval set (live)
 pnpm --dir web evals:gate                  # CI gate subset
 make test                                  # go test -race ./... + Vitest
 make lint                                  # golangci-lint + eslint (Next 16 has no `next lint`)
+pnpm --dir web typecheck                   # next typegen + tsc (plain tsc misses Next's generated route types)
 npx @redocly/cli@2.72.1 lint contracts/openapi.yaml  # contract lint (same as CI)
 pnpm e2e                                   # Playwright (mock mode)
 k6 run load-tests/check-burst.js           # load test (mock-mode deployment)
@@ -447,4 +448,5 @@ Bugs and how they were resolved -- what broke and how you fixed it is great inte
 | air failed with "invalid escape sequence: \s" | Windows path in a TOML basic string (`"tmp\server.exe"`) | TOML literal string `'tmp\server.exe'` |
 | Every rdap.org lookup returned 403 | rdap.org's CDN blocks Node's default User-Agent | Send a descriptive `user-agent` header |
 | Every grounded Gemini call returned 429 "exceeded your current quota" with no quota details | Grounding is not offered on the Free tier at all; it isn't a rate limit | Confirmed on the pricing page; moved all lookups to Tavily |
+| CI `tsc --noEmit` failed: "Cannot find name 'LayoutProps'" (passed locally) | Next generates route type globals into `.next/types` via `next-env.d.ts`, both gitignored; local runs reused files from earlier `dev`/`build`, a clean CI checkout had none | `pnpm typecheck` = `next typegen && tsc --noEmit`, used locally and in CI; reproduced by deleting `.next`/`next-env.d.ts` first |
 | Smoke report counted a skipped vision call as passed | Helper returned a boolean, so skip and pass collapsed together | Return `pass`/`fail`/`skip` and count each separately |

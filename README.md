@@ -17,7 +17,7 @@ Architecture, decisions, and local run commands are in [CLAUDE.md](CLAUDE.md).
 | Check | Runs when | What it does |
 |---|---|---|
 | `go` | `api/`, `Makefile`, or the workflow changed | `go vet`, golangci-lint, `go test -race`, `go build` |
-| `web` | `web/` or the workflow changed | eslint, `tsc --noEmit`, Vitest, `next build` |
+| `web` | `web/` or the workflow changed | eslint, `next typegen` + `tsc --noEmit`, Vitest, `next build` |
 | `contract` | always | Redocly lint of `contracts/openapi.yaml`; `make gen` must leave no diff |
 
 A check skipped by its path filter reports as **skipped**. GitHub counts that as passing for required checks, so a Go-only PR isn't blocked waiting on `web`.
