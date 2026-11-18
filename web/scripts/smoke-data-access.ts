@@ -20,7 +20,11 @@ const TIMEOUT_MS = 15_000;
 const USER_AGENT = "receipts-smoke/0.1";
 
 // Real TikTok videos for the oEmbed check. Only the oEmbed endpoint is called.
-const TIKTOK_URLS: string[] = [];
+const TIKTOK_URLS: string[] = [
+  "https://www.tiktok.com/@dietrichcloset/video/7709212074899016990",
+  "https://www.tiktok.com/@dealscope/video/7688946374112513294",
+  "https://www.tiktok.com/@detected101/video/7638945791855381774",
+];
 
 const PRODUCTS = [
   "Medicube Zero Pore Pads",

@@ -22,6 +22,20 @@ Update this section after every task: what exists, what changed from the plan, a
 - Docker Desktop needs the Windows "Virtual Machine Platform" feature (WSL2). If the engine pipe is missing, run `wsl --status`; fix with admin `wsl.exe --install --no-distribution` + reboot. Docker Desktop doesn't auto-start, so launch it before `docker compose up`.
 - Verified: `docker compose up -d --wait` (Postgres 17.12 and Redis 7 healthy); SIGTERM in a `golang:1.27` container logs "shutting down" then "shutdown complete" and exits 0.
 
+**Phase 0 Task 2 results (2026-11-17, `pnpm --dir web smoke`, `web/scripts/smoke-data-access.ts`):**
+- **TikTok oEmbed: no captions.** 3/3 real videos answered, but returned no `title` and no `author_name`, only `html` (a bare 332-char embed with no text), `embed_product_id`, and `embed_type`. A link alone gives the video ID; the handle comes from the URL path (`/@handle/video/<id>`). Caption and commission label need a screenshot, so for link input, ask for one.
+- **Tavily TikTok coverage: 11.6 videos/product on average** (run 2: 8-17 per product; run 1: 13.2) over 5 skincare products x 3 query variants (`include_domains: ["tiktok.com"]`, 20 results each). That's below the 20-post target, so the **YouTube supplement is needed**. About 50 of each product's results are non-video tiktok.com pages (discover/tag). About 50% of video snippets are caption-like (hashtags/@mentions, including disclosures such as `#GlowPartner`); the rest are TikTok's generated prose summaries, so the paid-signal classifier must not treat summary prose as the creator's caption. Cost: 15 credits per run.
+- **Gemini grounding: not available.** Every grounded call returns 429 on the Free tier; the pricing page lists grounding as "Not available" there. All lookups use Tavily instead (see Decisions log).
+- **Gemini 3.5 Flash-Lite (default): works.** Structured text took ~1.1s (88 tokens). Vision on a TikTok Shop listing took ~2.8s (1,215 tokens; the image is ~1.1k prompt tokens) and extracted every field correctly (brand, title, $25.00, "33 sold", no rating, no commission label) with zero thinking tokens. Schema-valid JSON every time via `responseJsonSchema` from `z.toJSONSchema()` (with `$schema` removed).
+- **Gemini 3.8 Flash (fallback): unusable on the free tier today.** It timed out at 15s or returned 503 "high demand" on every call; 3.5/3.6/3.7 Flash did the same. Its free RPD is only 20, so it can't be a real fallback: retry Flash-Lite first, and treat Flash as best-effort.
+- **Gemini models:** 2.5-series models are closed to new users (404). `thinkingLevel: "minimal"` isn't supported on 3.8 Flash (400).
+- **AI Studio free-tier limits (project `Receipts`, read 2026-11-17):** 3.5 Flash-Lite 15 RPM / 250K TPM / 500 RPD; 3.8 Flash 5 RPM / 250K TPM / 20 RPD.
+- **Other free allowances:** Tavily 1,000 credits/month (no card; basic search = 1 credit). YouTube Data API 10,000 units/day; `search.list` costs 1 unit but is capped at 100 calls/day, and `videos.list` costs 1 unit (Google's getting-started docs).
+- **RDAP:** works through `rdap.org` only with a descriptive User-Agent (403 otherwise), and redirects to the registry. cerave.com was registered 2004-11-18; dr-melaxin.com 2026-10-07 (41 days old). `.us` domains return 404 (not in the bootstrap).
+- **CPSC:** the API answers fast (JSON array). It covers consumer products, not cosmetics (FDA), and matches substrings ("facial" matched a VR headset face pad).
+- **YouTube:** not tested; no key yet. **Reddit:** skipped (not configured).
+- **Isolation verified:** with a bad Tavily key, only that section failed and the rest of the report ran.
+
 **Product:** Receipts (repo and LangSmith project `receipts`). Tagline: "Check the hype before you buy." Before launch: confirm a domain, check no similar consumer app uses the name, search USPTO. Never use "TikTok" or "Tok" in the name.
 
 ## Product
@@ -184,9 +198,9 @@ receipts/
 - **Launch discipline:** set a launch date at the start of Phase 4; Phase 5 may not push it more than a week. Anything that would moves post-launch and gets logged.
 
 ## Known risks
-- **oEmbed captions** may be missing (reported Oct 2026) -- verified in Phase 0; falls back to screenshots.
+- **oEmbed captions** -- confirmed missing in Phase 0 (no title/author, 0/3 videos); link input must ask for a screenshot to get the caption and commission label.
 - **Reddit API** requires approval -- reviews work without it.
-- **TikTok search coverage** is uneven -- measured in Phase 0; YouTube supplement exists for this.
+- **TikTok search coverage** -- measured in Phase 0 at ~12 videos/product (target 20); the YouTube supplement is needed, and the hype meter must state its sample size.
 - **Labeling accuracy** -- false "paid" or risk claims are defamation risks; conservative wording, evidence, corrections.
 - **Dropship false matches** -- reported as "similar generic items found," never fact.
 - **Free-tier limits** change and Gemini's aren't published -- record real limits from AI Studio in Phase 0.
@@ -282,6 +296,7 @@ make dev-api                               # Go API on :8080 (air hot reload)
 pnpm --dir web dev                         # Next.js + agent routes on :3000
 npx inngest-cli@latest dev -u http://localhost:8080/api/inngest
 pnpm --dir web check "<url-or-image-path>" # agent pipeline from the CLI
+pnpm --dir web smoke                       # data-access smoke test (live; ~15 Tavily credits, ~5 Gemini calls)
 pnpm --dir web evals                       # full eval set (live)
 pnpm --dir web evals:gate                  # CI gate subset
 make test                                  # go test -race ./... + Vitest
@@ -335,9 +350,9 @@ Update after every task and phase. This is the first thing a new session reads.
 
 ### Current status
 - **Current phase:** Phase 0 -- Validation and setup
-- **Current task:** Phase 0, Task 2 -- Data-access smoke test
-- **Last completed task:** Phase 0, Task 1 -- Scaffold the monorepo (2026-11-13)
-- **Next task:** Phase 0, Task 3 -- CI baseline
+- **Current task:** Phase 0, Task 3 -- CI baseline
+- **Last completed task:** Phase 0, Task 2 -- Data-access smoke test (2026-11-17)
+- **Next task:** Phase 0 manual validation test, then Phase 1, Task 1 -- Zod schemas
 - **Launch date:** not set (set at the start of Phase 4)
 
 ### Phase completion
@@ -353,7 +368,7 @@ Update after every task and phase. This is the first thing a new session reads.
 ### Phase 0 tasks
 - [ ] Manual validation test (non-coding)
 - [x] Task 1 -- Scaffold the monorepo
-- [ ] Task 2 -- Data-access smoke test
+- [x] Task 2 -- Data-access smoke test
 - [ ] Task 3 -- CI baseline
 
 ### Phase 1 tasks
@@ -425,3 +440,6 @@ Bugs and how they were resolved -- what broke and how you fixed it is great inte
 | Docker engine never came up (`dockerDesktopLinuxEngine` pipe missing) | Windows "Virtual Machine Platform" feature was off, so WSL2 couldn't run (BIOS virtualization was fine) | Admin `wsl.exe --install --no-distribution` + reboot |
 | `go test -race` failed to find a usable C compiler | Old 32-bit `C:\MinGW` gcc 6.3 is first on the system PATH | Installed WinLibs gcc and set `go env -w CC=` to it, leaving PATH alone |
 | air failed with "invalid escape sequence: \s" | Windows path in a TOML basic string (`"tmp\server.exe"`) | TOML literal string `'tmp\server.exe'` |
+| Every rdap.org lookup returned 403 | rdap.org's CDN blocks Node's default User-Agent | Send a descriptive `user-agent` header |
+| Every grounded Gemini call returned 429 "exceeded your current quota" with no quota details | Grounding is not offered on the Free tier at all; it isn't a rate limit | Confirmed on the pricing page; moved all lookups to Tavily |
+| Smoke report counted a skipped vision call as passed | Helper returned a boolean, so skip and pass collapsed together | Return `pass`/`fail`/`skip` and count each separately |
