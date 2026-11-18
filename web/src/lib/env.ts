@@ -168,3 +168,6 @@ export const env = {
       NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     }),
 };
+
+// CI test: deliberate type error. Must never be merged.
+export const __ciTypeError: number = "x";
